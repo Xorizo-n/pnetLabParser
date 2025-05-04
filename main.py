@@ -1,20 +1,25 @@
-import os
-import tkinter as tk
-from tkinter import filedialog
 import base64
 import hashlib
 import re
 import uuid
 import xml.etree.ElementTree as ET
-from bs4 import BeautifulSoup
-import webbrowser
+from dataclasses import dataclass
 from pathlib import Path
 
-# Debug режим (True для проверки HTML результата)
-DEBUG = True
+from bs4 import BeautifulSoup
+
+
+@dataclass
+class TemplateParams:
+    template_path: Path  # Выбор файла шаблона
+    lab_name: str  # Название лаболаторной без .unl
+    telnet_links: dict[str, str]  # Адрес для устройства node JSON формата
+    debug: bool  # Debug режим (True для проверки HTML результата)
 
 
 def select_template_file() -> Path | None:
+    import tkinter as tk
+    from tkinter import filedialog
     """Выбор файла шаблона через проводник"""
     root = tk.Tk()
     root.withdraw()  # Скрываем основное окно
@@ -98,11 +103,6 @@ def process_template_html(content: str, links: dict[str, str]) -> str:
     """Обработка HTML с добавлением telnet-ссылок только для элементов с иконками"""
     soup = BeautifulSoup(content, 'html.parser')
 
-    # Исправляем пути к иконкам
-    for img in soup.find_all('img', {'class': 'node_image'}):
-        if img['src'].startswith('/images/icons/'):
-            img['src'] = 'images/icons/' + img['src'].split('/')[-1]
-
     # Находим все элементы с иконками устройств
     node_icons = soup.find_all('i', {'class': 'nodehtmlconsole'})
 
@@ -156,8 +156,8 @@ def process_template_html(content: str, links: dict[str, str]) -> str:
     return str(container)
 
 
-
 def debug_html_output(html_content: str, output_path: Path):
+    import webbrowser
     """Сохранение HTML результата для отладки"""
     debug_file = output_path.with_suffix('.debug.html')
     with open(debug_file, 'w', encoding='utf-8') as f:
@@ -165,20 +165,21 @@ def debug_html_output(html_content: str, output_path: Path):
     webbrowser.open(f"file://{debug_file}")
 
 
-def main():
+def interface() -> TemplateParams | None:
+    """Получение настроек пользователя из диалоговых окон"""
     print("=== Конвертер HTML шаблонов в UNL ===")
 
     # 1. Выбор файла шаблона
     template_path = select_template_file()
     if not template_path:
         print("Файл не выбран. Выход.")
-        return
+        return None
 
     # 2. Ввод названия
     lab_name = input("Введите название лабораторной работы (без .unl): ").strip()
     if not lab_name:
         print("Название не может быть пустым!")
-        return
+        return None
 
     try:
         # 3. Чтение шаблона и подсчет нод с иконками
@@ -192,21 +193,37 @@ def main():
 
         # 4. Запрос telnet-адресов
         telnet_links = get_telnet_links(node_count)
+    except Exception as e:
+        print(f"✖ Ошибка при обработке: {str(e)}")
+        return None
 
-        # 5. Обработка шаблона
-        processed_html = process_template_html(html_content, telnet_links)
-        base64_content = base64.b64encode(clean_html_content(processed_html).encode()).decode()
+    return TemplateParams(
+        template_path=template_path,
+        lab_name=lab_name,
+        telnet_links=telnet_links,
+        debug=True,
+    )
 
-        # 6. Сохранение UNL
+
+def main():
+    # 1. Получаем параметры из интерфейса
+    # TODO: дописать CLI
+    params = interface()
+    try:
+        # 1. Обработка шаблона
+        html_content = params.template_path.read_text(encoding='utf-8')
+        processed_html = process_template_html(html_content, params.telnet_links)
+        base64_content = base64.b64encode(clean_html_content(processed_html).encode("utf-8")).decode()
+
+        # 2. Сохранение UNL
         script_dir = Path(__file__).parent
-        output_path = script_dir / f"{lab_name}.unl"
-        output_path.write_bytes(create_lab_xml(lab_name, base64_content))
+        output_path = script_dir / f"{params.lab_name}.unl"
+        output_path.write_bytes(create_lab_xml(params.lab_name, base64_content))
         print(f"✓ Файл успешно сохранён: {output_path}")
 
-        # 7. Отладка (если включена)
-        if DEBUG:
+        # 3. Отладка (если включена)
+        if params.debug:
             debug_html_output(processed_html, output_path)
-
     except Exception as e:
         print(f"✖ Ошибка при обработке: {str(e)}")
 

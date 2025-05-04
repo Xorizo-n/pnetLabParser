@@ -1,4 +1,4 @@
-# UNL Generator - Конвертер HTML шаблонов для PNETLab
+# Конвертер HTML шаблонов для PNETLab
 
 ![Интерфейс](images/screenshot.png)
 

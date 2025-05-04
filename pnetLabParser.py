@@ -2,10 +2,12 @@ import base64
 import hashlib
 import re
 import uuid
+import json
+import argparse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-
+from typing import Optional
 from bs4 import BeautifulSoup
 
 
@@ -205,28 +207,107 @@ def interface() -> TemplateParams | None:
     )
 
 
-def main():
-    # 1. Получаем параметры из интерфейса
-    # TODO: дописать CLI
-    params = interface()
+def cli() -> Optional[TemplateParams]:
+    """Парсинг аргументов командной строки"""
+    parser = argparse.ArgumentParser(
+        description='Конвертер HTML шаблонов в UNL',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    parser.add_argument(
+        '-t', '--template',
+        type=str,
+        help='Путь к HTML шаблону лабораторной работы'
+    )
+    parser.add_argument(
+        '-n', '--name',
+        required=True,
+        type=str,
+        help='Название лабораторной работы (без расширения)'
+    )
+    parser.add_argument(
+        '-l', '--links',
+        type=str,
+        help='JSON строка с telnet-адресами (формат: {"node1":"ip:port", ...})'
+    )
+    parser.add_argument(
+        '-lf', '--links-file',
+        type=str,
+        help='Путь к JSON-файлу с telnet-адресами'
+    )
+    parser.add_argument(
+        '-d', '--debug',
+        action='store_true',
+        help='Включить режим отладки (генерация HTML для проверки)'
+    )
+
+    args = parser.parse_args()
+
     try:
-        # 1. Обработка шаблона
+        # Обработка telnet-ссылок
+        telnet_links = {}
+
+        if args.links_file:
+            with open(args.links_file, 'r', encoding='utf-8') as f:
+                links_data = json.load(f)
+                telnet_links = {k: f"telnet://{v}" if not v.startswith('telnet://') else v
+                                for k, v in links_data.items()}
+        elif args.links:
+            links_data = json.loads(args.links)
+            telnet_links = {k: f"telnet://{v}" if not v.startswith('telnet://') else v
+                            for k, v in links_data.items()}
+
+        template_path = Path(args.template) if args.template else None
+
+        return TemplateParams(
+            template_path=template_path,
+            lab_name=args.name,
+            telnet_links=telnet_links,
+            debug=args.debug
+        )
+    except json.JSONDecodeError as e:
+        print(f"Ошибка формата JSON: {str(e)}")
+        return None
+    except FileNotFoundError:
+        print(f"Файл не найден: {args.links_file}")
+        return None
+    except Exception as e:
+        print(f"Ошибка обработки аргументов: {str(e)}")
+        return None
+
+
+def main():
+    # Парсинг аргументов CLI
+    if len(sys.argv) > 1:
+        params = cli()
+        if not params:
+            sys.exit(1)
+    else:
+        # Запуск GUI интерфейса если нет аргументов
+        params = interface()
+        if not params:
+            sys.exit(0)
+
+    try:
+        # Обработка шаблона
         html_content = params.template_path.read_text(encoding='utf-8')
         processed_html = process_template_html(html_content, params.telnet_links)
         base64_content = base64.b64encode(clean_html_content(processed_html).encode("utf-8")).decode()
 
-        # 2. Сохранение UNL
+        # Сохранение UNL
         script_dir = Path(__file__).parent
         output_path = script_dir / f"{params.lab_name}.unl"
         output_path.write_bytes(create_lab_xml(params.lab_name, base64_content))
         print(f"✓ Файл успешно сохранён: {output_path}")
 
-        # 3. Отладка (если включена)
+        # Отладка
         if params.debug:
             debug_html_output(processed_html, output_path)
     except Exception as e:
         print(f"✖ Ошибка при обработке: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
+    import sys
     main()

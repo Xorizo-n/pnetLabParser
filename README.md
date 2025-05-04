@@ -9,7 +9,7 @@
 
 1. Запуск GUI
 `python pnetLabParser.py`
-2. Запуск CLI с JSON стройкой для ссылок
+2. Запуск CLI с JSON строкой для ссылок
 `python pnetLabParser.py -t templates/pnet_virtual_topology.html -n lab1 -l '{\"node1\":\"10.40.83.2:2027\",\"node2\":\"10.40.68.3:2028\",\"node3\":\"10.40.68.3:2029\",\"node4\":\"10.40.68.3:2030\",\"node5\":\"10.40.68.3:2031\",\"node6\":\"10.40.68.3:2032\"}' -d`
 3. Запуск CLI с JSON файлом для ссылок
 `python pnetLabParser.py -t templates/pnet_virtual_topology.html -n lab1 -lf telnet_links.json -d`
